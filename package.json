@@ -1,0 +1,30 @@
+{
+  "name": "nextjs-recommender",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "migrate": "prisma migrate deploy",
+    "prisma:generate": "prisma generate",
+    "worker:cf": "ts-node -r tsconfig-paths/register src/workers/cf_worker.ts",
+    "worker:features": "ts-node -r tsconfig-paths/register src/workers/feature_worker.ts",
+    "worker:event": "ts-node -r tsconfig-paths/register src/workers/event_consumer.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "bcrypt": "^5.1.0",
+    "bullmq": "^2.10.0",
+    "ioredis": "^5.3.2",
+    "next": "^13.5.0",
+    "prisma": "^5.0.0",
+    "zod": "^3.23.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
+  }
+}
