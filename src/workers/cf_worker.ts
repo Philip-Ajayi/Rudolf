@@ -1,15 +1,3 @@
-/**
- * Lightweight implicit-feedback matrix factorization via SGD for implicit interactions.
- * - Reads interactions aggregated for a time window.
- * - Projects to latent factors for users and products.
- * - Writes compact factor vectors to FeatureStore table and Redis as needed.
- * - Precomputes per-user top-K into Redis sorted sets for active users only (active users from recent interactions).
- *
- * This is a scalable single-node implementation using sparse maps and minibatch SGD.
- *
- * NOTE: For very large scale, replace this with a distributed job (Spark / Ray) and write factors to FeatureStore.
- */
-
 import { prisma } from '../lib/prisma';
 import redis, { KEYS } from '../lib/redis';
 
@@ -33,7 +21,6 @@ const LEARNING_RATE = 0.025;
 const REG = 0.01;
 const TOPK = 200; // per-user precompute
 
-// Load interactions aggregated: userId, productId, weight
 async function loadInteractionsWindow(days = 60, limit = 2_000_000) {
   const since = new Date(Date.now() - days * 24 * 3600 * 1000);
   const rows: { userId: string | null; productId: string; weight: number }[] = await prisma.$queryRawUnsafe(`
@@ -55,7 +42,7 @@ async function run() {
   const interactions = await loadInteractionsWindow(90, 1_000_000);
   console.log('CF worker: interactions loaded', interactions.length);
 
-  // Build sparse maps
+
   const users = new Map<string, Map<string, number>>(); // user -> (product -> weight)
   const productsSet = new Set<string>();
   for (const r of interactions) {
@@ -65,14 +52,13 @@ async function run() {
     productsSet.add(r.productId);
   }
 
-  // Initialize factors
+
   const productFactors = new Map<string, Vec>();
   const userFactors = new Map<string, Vec>();
 
   for (const pid of productsSet) productFactors.set(pid, randVec(DIM));
   for (const uid of users.keys()) userFactors.set(uid, randVec(DIM));
 
-  // SGD implicit factorization
   console.log('CF worker: starting SGD', { users: users.size, products: productsSet.size });
   for (let epoch = 0; epoch < EPOCHS; epoch++) {
     let cnt = 0;
@@ -82,7 +68,7 @@ async function run() {
         const pvec = productFactors.get(pid)!;
         const pred = dot(uvec, pvec);
         const err = weight - pred;
-        // gradient update
+        
         for (let k = 0; k < DIM; k++) {
           const ug = err * pvec[k] - REG * uvec[k];
           const pg = err * uvec[k] - REG * pvec[k];
@@ -93,7 +79,7 @@ async function run() {
       }
     }
     console.log(`epoch ${epoch} done, updates ${cnt}`);
-    // optional: reduce LR
+  
   }
 
   // Persist compact vectors to FeatureStore (DB) and redis for hot products
@@ -119,7 +105,6 @@ async function run() {
     }
   }
 
-  // Save user factors
   const ufEntries = Array.from(userFactors.entries());
   for (let i = 0; i < ufEntries.length; i += 200) {
     const batch = ufEntries.slice(i, i + 200);
@@ -133,11 +118,9 @@ async function run() {
     }
   }
 
-  // Precompute per-user top-K for *active* users only (recent interactions)
   console.log('CF worker: precomputing per-user top-K and writing to Redis');
   for (const [uid, pm] of users) {
     const uvec = userFactors.get(uid)!;
-    // compute dot product with every product (could be huge; limit to active products)
     const scores: [string, number][] = [];
     for (const [pid, pvec] of productFactors) {
       scores.push([pid, dot(uvec, pvec)]);
@@ -145,14 +128,12 @@ async function run() {
     scores.sort((a, b) => b[1] - a[1]);
     const top = scores.slice(0, TOPK);
     const key = KEYS.userTopK(uid);
-    // prepare zadd args
     const args: string[] = [];
     for (const [pid, sc] of top) {
       args.push(sc.toString(), pid);
     }
     if (args.length) await redis.del(key);
     if (args.length) await redis.zadd(key, ...args);
-    // limit TTL for hotness
     await redis.expire(key, 24 * 3600); // precomputed for 24h
   }
 
