@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String      @id @default(uuid())
+  createdAt      DateTime    @default(now())
+  // preferences: top categories / merchants (jsonb)
+  prefs          Json?       @db.JsonB
+  interactions   Interaction[]
+  // last session in redis; won't be large in DB
+}
+
+model MerchantCategory {
+  id    String  @id @default(uuid())
+  name  String  @unique
+  merchants Merchant[]
+}
+
+model Merchant {
+  id             String   @id @default(uuid())
+  name           String
+  merchantCategoryId String
+  merchantCategory   MerchantCategory @relation(fields: [merchantCategoryId], references: [id])
+  popularity     Float    @default(0) // periodically updated
+  products       Product[]
+  @@index([merchantCategoryId])
+}
+
+model ProductCategory {
+  id    String @id @default(uuid())
+  name  String @unique
+  products Product[]
+}
+
+model Product {
+  id               String   @id @default(uuid())
+  merchantId       String
+  merchant         Merchant @relation(fields: [merchantId], references: [id])
+  productCategoryId String
+  productCategory  ProductCategory @relation(fields: [productCategoryId], references: [id])
+  optionalCategoryId String? // optional predefined category id
+  title            String
+  description      String
+  createdAt        DateTime @default(now())
+  popularity       Float    @default(0) // aggregate CTR / purchases
+  metadata         Json?    @db.JsonB
+  interactions     Interaction[]
+  @@index([productCategoryId])
+  @@index([merchantId])
+  @@fulltext([title, description])
+}
+
+model Interaction {
+  id         String   @id @default(uuid())
+  userId     String?
+  productId  String
+  type       InteractionType
+  value      Float    @default(1)
+  createdAt  DateTime @default(now())
+  // type: view, click, cart, purchase
+  @@index([productId])
+  @@index([userId])
+}
+
+enum InteractionType {
+  VIEW
+  CLICK
+  CART
+  PURCHASE
+}
+
+// Precomputed user->topK product scores (materialized for hot users)
+model UserTopK {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  score     Float
+  updatedAt DateTime @updatedAt
+  @@index([userId, score])
+}
+
+// Feature store: small JSONB blobs used by online scoring; keep compact
+model FeatureStore {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  namespace String   // 'user_factors','product_factors','merchant_stats','global'
+  value     Json     @db.JsonB
+  updatedAt DateTime @updatedAt
+}
