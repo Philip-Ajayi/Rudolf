@@ -1,11 +1,3 @@
-/**
- * Greedy re-ranker to enforce merchant/category diversity.
- * Input: sorted list by score (highest first).
- * Output: re-ordered list with constraints:
- * - no more than maxSameMerchantConsecutive consecutive items from same merchant
- * - merchant and category ratio limits
- */
-
 type Item = { id: string; score: number; meta: any };
 
 export function ensureDiversity(items: Item[], opts: {
