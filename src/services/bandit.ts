@@ -1,13 +1,5 @@
 import redis, { KEYS } from '../lib/redis';
 
-/**
- * Thompson sampling for merchant/category bandit.
- * Stores (alpha, beta) as ints in Redis hash; uses Beta(alpha,beta) sampling by approximate method:
- * draw two gammas via -ln(U) with shape approximation (we do simple Beta sampling using math).
- *
- * Memory: we store only (a,b) per merchant/category. Extremely compact.
- */
-
 async function getAB(key: string) {
   const data = await redis.hmget(key, 'a', 'b');
   const a = Number(data[0] || 1);
